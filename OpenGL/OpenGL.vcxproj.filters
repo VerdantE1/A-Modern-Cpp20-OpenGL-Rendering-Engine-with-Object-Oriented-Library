@@ -1064,6 +1064,9 @@
     <ClInclude Include="src\include\Scene\Components\ShadowComponent.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="src\include\3D\SkyBoxModel.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="res\shaders\Basic.shader" />
@@ -1505,6 +1508,7 @@
     <None Include="res\shaders\Blinn-Phong.shader" />
     <None Include="res\shaders\ShadowShader\ShadowPass.shader" />
     <None Include="res\shaders\ShadowShader\RenderPass.shader" />
+    <None Include="res\shaders\Skybox\Skybox.shader" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="res\textures\textures1.jpg">

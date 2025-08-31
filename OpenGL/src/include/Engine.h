@@ -128,7 +128,16 @@ protected:
                 globalInputHandler(GLFW_KEY_C, GLFW_PRESS);
                 lastKeyTime = currentTime;
             }
-            // 添加数字键处理
+            // 🆕 添加L和R键处理
+            else if (glfwGetKey(window, GLFW_KEY_L) == GLFW_PRESS) {
+                globalInputHandler(GLFW_KEY_L, GLFW_PRESS);
+                lastKeyTime = currentTime;
+            }
+            else if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS) {
+                globalInputHandler(GLFW_KEY_R, GLFW_PRESS);
+                lastKeyTime = currentTime;
+            }
+            // 数字键处理
             else if (glfwGetKey(window, GLFW_KEY_1) == GLFW_PRESS) {
                 globalInputHandler(GLFW_KEY_1, GLFW_PRESS);
                 lastKeyTime = currentTime;
@@ -179,6 +188,7 @@ private:
         }
     }
 };
+
 
 
 

@@ -3,72 +3,74 @@
 #include <string>
 #include <unordered_set>
 #include <glm/glm.hpp>
-
+#include <vector>
+#include <memory>
 
 typedef int GLint;
 
+// 纹理类型枚举
+enum class TextureType {
+    TEXTURE_2D,      // 普通2D纹理
+    TEXTURE_CUBE     // 立方体贴图
+};
+
 // 纹理过滤模式枚举
 enum class TextureFilterMode {
-    NEAREST,                // 最近点采样
-    LINEAR,                 // 线性过滤
-    NEAREST_MIPMAP_NEAREST, // 最近的mipmap层级，并使用最近点采样
-    LINEAR_MIPMAP_NEAREST,  // 最近的mipmap层级，并使用线性过滤
-    NEAREST_MIPMAP_LINEAR,  // 在mipmap层级之间插值，每层使用最近点采样
-    LINEAR_MIPMAP_LINEAR    // 在mipmap层级之间插值，每层使用线性过滤（质量最高）
+    NEAREST,
+    LINEAR,
+    NEAREST_MIPMAP_NEAREST,
+    LINEAR_MIPMAP_NEAREST,
+    NEAREST_MIPMAP_LINEAR,
+    LINEAR_MIPMAP_LINEAR
 };
 
 // 纹理环绕模式枚举
 enum class TextureWrapMode {
-    REPEAT,          // 重复
-    MIRRORED_REPEAT, // 镜像重复
-    CLAMP_TO_EDGE,   // 边缘拉伸
-    CLAMP_TO_BORDER  // 使用边框颜色
+    REPEAT,
+    MIRRORED_REPEAT,
+    CLAMP_TO_EDGE,
+    CLAMP_TO_BORDER
 };
 
 // 各向异性过滤级别枚举
 enum class AnisotropyLevel {
-    NONE = 0,        // 不使用各向异性过滤
-    LOW = 2,         // 低级别各向异性过滤 (2x)
-    MEDIUM = 4,      // 中级别各向异性过滤 (4x)
-    HIGH = 8,        // 高级别各向异性过滤 (8x)
-    VERY_HIGH = 16   // 非常高级别各向异性过滤 (16x)
+    NONE = 0,
+    LOW = 2,
+    MEDIUM = 4,
+    HIGH = 8,
+    VERY_HIGH = 16
 };
 
-
-/*
-* Texture will be assigned in orderly from 0 start. This is force for unifying the bind interface.
-*/
 class Texture : public Resource
 {
 private:
     std::string m_FilePath;
     unsigned char* m_LocalBuffer;
     int m_Width, m_Height, m_Bpp;
-    unsigned int m_AssignedSlot = -1; // This Slot AssignedSlot by Renderer
+    unsigned int m_AssignedSlot = -1;
     
-    // 新增：存储各向异性过滤等级
+    // 纹理类型
+    TextureType m_TextureType = TextureType::TEXTURE_2D;
+    
+    // 各向异性过滤等级
     float m_AnisotropyLevel = 1.0f;
     
-    // Track available texture slots
+    // 静态资源管理
     static std::unordered_set<unsigned int> s_AvailableSlots;
     static unsigned int s_MaxSlotUsed;
-    
-    // 静态成员：检查并存储是否支持各向异性过滤及最大支持级别
     static bool s_AnisotropyChecked;
     static bool s_AnisotropySupported;
     static float s_MaxAnisotropy;
 
-    // 辅助函数，将枚举转换为OpenGL常量
+    // 辅助函数
     GLint GetGLFilterMode(TextureFilterMode mode) const;
     GLint GetGLWrapMode(TextureWrapMode mode) const;
-    
-    // 检查各向异性过滤支持
     static void CheckAnisotropySupport();
 
 public:
     Texture() = default;
     
-    // 带有完整参数的构造函数，增加了各向异性过滤参数
+    // 现有2D纹理构造函数
     Texture(const std::string& filepath, 
             TextureFilterMode magFilter = TextureFilterMode::LINEAR, 
             TextureFilterMode minFilter = TextureFilterMode::LINEAR,
@@ -78,22 +80,26 @@ public:
             bool flipVertically = true,
             AnisotropyLevel anisotropy = AnisotropyLevel::NONE);
     
+    
+    static std::unique_ptr<Texture> CreateCubeMapFromSixImages(const std::vector<std::string>& faces,
+            TextureFilterMode magFilter = TextureFilterMode::LINEAR,
+            TextureFilterMode minFilter = TextureFilterMode::LINEAR,
+            bool generateMipmaps = false);
+    
     ~Texture();
 
     void Bind() const override; 
     void Unbind() const override;
 
-    // 设置边框颜色（当使用CLAMP_TO_BORDER模式时）
-    void SetBorderColor(const glm::vec4& color);
+    // 获取纹理类型
+    TextureType GetTextureType() const { return m_TextureType; }
     
-    // 设置各向异性过滤级别
+    // 现有方法保持不变
+    void SetBorderColor(const glm::vec4& color);
     void SetAnisotropyLevel(AnisotropyLevel level);
     void SetAnisotropyLevel(float level);
-    
-    // 获取各向异性过滤设置
     float GetAnisotropyLevel() const { return m_AnisotropyLevel; }
     
-    // 获取是否支持各向异性过滤和最大支持级别
     static bool IsAnisotropySupported() { 
         if (!s_AnisotropyChecked) CheckAnisotropySupport();
         return s_AnisotropySupported; 
@@ -110,11 +116,9 @@ public:
     inline int GetBpp() const { return m_Bpp; } 
     inline unsigned int GetAssignedSlot() const { return m_AssignedSlot; }
     
-    // 静态方法
     static unsigned int GetNextAvailableSlot();
     static void ReleaseSlot(unsigned int slot);
 };
-
 
 
 

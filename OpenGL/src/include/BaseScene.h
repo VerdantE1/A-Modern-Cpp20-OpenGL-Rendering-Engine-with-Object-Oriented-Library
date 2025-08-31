@@ -10,7 +10,7 @@
 
 class BaseScene : public Scene {
 public:
-    using EnityInitializer = std::function<void(Scene*)>;
+    using EnityInitializer = std::function<void(Scene*) >;
 
     void Initialize() override;
     void Update(float delataTime) override;
@@ -25,6 +25,9 @@ public:
     //提供访问实体的方法（供Engine使用）
     const std::vector<std::unique_ptr<Entity>>& GetAllEntities() const { return m_Entities; }
 
+   
+    void RenderSkybox();
+
 private:
     CameraConfig cameraConfig;
     EnityInitializer enityInitializer;
@@ -35,8 +38,6 @@ private:
     void RenderAllEntities(const Renderer& renderer, const glm::mat4& view, const glm::mat4& projection);
     void BuildLightIndex();
     void ApplyIndexedLightsToShader(Shader& shader, const glm::mat4& view);
-    void AddLightToIndex(const std::string& name, LightComponent* lightComp);
-    void RemoveLightFromIndex(const std::string& name);
     void SetGlobalLight();
     void ApplyGlobalLightToAllShaders();
     void InlitializeEntities(EnityInitializer initializer);
@@ -44,8 +45,10 @@ private:
     void UpdateDynamicLights(float deltaTime);
     void ApplyGlobalLightToShader(RenderComponent& renderComp);
 
-    // 🆕 阴影系统支持
+    // 阴影系统支持
     void InitializeShadowSystem();    // 初始化阶段调用
     void RenderShadowPass(const Renderer& renderer);  // 渲染阶段调用
-    
+
+    // 天空盒
+	std::unique_ptr<Texture> m_skyboxTexture = nullptr;
 };

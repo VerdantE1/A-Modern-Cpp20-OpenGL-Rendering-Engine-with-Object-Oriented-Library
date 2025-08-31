@@ -190,6 +190,7 @@
   <ItemGroup>
     <ClInclude Include="doc\Camera.md" />
     <ClInclude Include="src\DrawDemo.h" />
+    <ClInclude Include="src\include\3D\SkyBoxModel.h" />
     <ClInclude Include="src\include\BaseScene.h" />
     <ClInclude Include="src\include\DrawDemoUtils.h" />
     <ClInclude Include="src\include\Engine.h" />
@@ -542,6 +543,7 @@
     <None Include="res\shaders\Phong.shader" />
     <None Include="res\shaders\ShadowShader\RenderPass.shader" />
     <None Include="res\shaders\ShadowShader\ShadowPass.shader" />
+    <None Include="res\shaders\Skybox\Skybox.shader" />
     <None Include="res\shaders\SoloarSystem.shader" />
     <None Include="res\shaders\Triangle.shader" />
     <None Include="res\shaders\TriangleRotate.shader" />

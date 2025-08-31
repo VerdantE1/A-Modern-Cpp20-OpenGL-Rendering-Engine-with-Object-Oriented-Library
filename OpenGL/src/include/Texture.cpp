@@ -1,6 +1,7 @@
 #include "Texture.h"
 #include "vendor/stb_image/stb_image.h"
 #include "Utility.h"
+#include "Logger.h"
 
 // 初始化静态成员
 std::unordered_set<unsigned int> Texture::s_AvailableSlots;
@@ -126,6 +127,82 @@ Texture::Texture(const std::string& filepath,
     }
 }
 
+
+std::unique_ptr<Texture> Texture::CreateCubeMapFromSixImages(const std::vector<std::string>& faces, TextureFilterMode magFilter, TextureFilterMode minFilter, bool generateMipmaps)
+{
+    if (faces.size() != 6) {
+        LOG_ERROR("Error: Cube map requires exactly 6 face textures, got {}", faces.size());
+        return nullptr;
+    }
+    
+    // 🔧 直接创建unique_ptr，避免拷贝问题
+    auto cubeTexture = std::make_unique<Texture>();
+    
+    // 设置为立方体贴图类型
+    cubeTexture->m_TextureType = TextureType::TEXTURE_CUBE;
+    cubeTexture->m_FilePath = "CubeMap[6 faces from Lycksele2]";
+    cubeTexture->m_AssignedSlot = GetNextAvailableSlot();
+    
+    // 创建立方体贴图纹理对象
+    GLCall(glGenTextures(1, &cubeTexture->m_id));
+    GLCall(glBindTexture(GL_TEXTURE_CUBE_MAP, cubeTexture->m_id));
+    
+    // 立方体贴图面的目标
+    GLenum cubeTargets[6] = {
+        GL_TEXTURE_CUBE_MAP_POSITIVE_X,  // posx.jpg (右面)
+        GL_TEXTURE_CUBE_MAP_NEGATIVE_X,  // negx.jpg (左面)
+        GL_TEXTURE_CUBE_MAP_POSITIVE_Y,  // posy.jpg (上面)
+        GL_TEXTURE_CUBE_MAP_NEGATIVE_Y,  // negy.jpg (下面)
+        GL_TEXTURE_CUBE_MAP_POSITIVE_Z,  // posz.jpg (前面)
+        GL_TEXTURE_CUBE_MAP_NEGATIVE_Z   // negz.jpg (后面)
+    };
+    
+    // 禁用垂直翻转
+    stbi_set_flip_vertically_on_load(false);
+    
+    // 逐个加载并上传6个面
+    for (int i = 0; i < 6; ++i) {
+        int width, height, bpp;
+        unsigned char* data = stbi_load(faces[i].c_str(), &width, &height, &bpp, 4);
+        
+        if (!data) {
+            LOG_ERROR("Failed to load cube map face {}: {}", i, faces[i]);
+            // 使用默认纹理
+            std::vector<unsigned char> defaultData(256 * 256 * 4, 255);
+            GLCall(glTexImage2D(cubeTargets[i], 0, GL_RGBA8, 256, 256, 0, GL_RGBA, GL_UNSIGNED_BYTE, defaultData.data()));
+            continue;
+        }
+        
+        GLCall(glTexImage2D(cubeTargets[i], 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data));
+        
+        if (i == 0) {
+            cubeTexture->m_Width = width;
+            cubeTexture->m_Height = height;
+            cubeTexture->m_Bpp = 4;
+        }
+        
+        stbi_image_free(data);
+        LOG_DEBUG("Texture: Loaded cube map face {}: {}", i, faces[i]);
+    }
+    
+    // 设置过滤参数
+    GLCall(glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, cubeTexture->GetGLFilterMode(magFilter)));
+    GLCall(glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, cubeTexture->GetGLFilterMode(minFilter)));
+    GLCall(glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE));
+    GLCall(glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
+    GLCall(glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE));
+    
+    if (generateMipmaps) {
+        GLCall(glGenerateMipmap(GL_TEXTURE_CUBE_MAP));
+    }
+    
+    GLCall(glActiveTexture(GL_TEXTURE0 + cubeTexture->m_AssignedSlot));
+    GLCall(glBindTexture(GL_TEXTURE_CUBE_MAP, cubeTexture->m_id));
+    
+    LOG_INFO("Texture: Cube map created from 6 images, assigned to slot {}", cubeTexture->m_AssignedSlot);
+    return cubeTexture;
+}
+
 Texture::~Texture()
 {
     // Release the assigned slot back to the pool
@@ -138,18 +215,29 @@ Texture::~Texture()
 
 void Texture::Bind() const
 {
-    if (m_AssignedSlot == -1)
-    {
-        std::cerr << "Texture Bind error: This Texture instance is not assigned yet for some unknown reason!" << std::endl;
+    if (m_AssignedSlot == -1) {
+        std::cerr << "Texture Bind error: This Texture instance is not assigned yet!" << std::endl;
         return;
     }
+    
     GLCall(glActiveTexture(GL_TEXTURE0 + m_AssignedSlot));
-    GLCall(glBindTexture(GL_TEXTURE_2D, m_id));
+    
+    // 🔧 根据纹理类型绑定不同的目标
+    if (m_TextureType == TextureType::TEXTURE_CUBE) {
+        GLCall(glBindTexture(GL_TEXTURE_CUBE_MAP, m_id));
+    } else {
+        GLCall(glBindTexture(GL_TEXTURE_2D, m_id));
+    }
 }
 
 void Texture::Unbind() const
 {
-    GLCall(glBindTexture(GL_TEXTURE_2D, 0));
+    // 🔧 根据纹理类型解绑不同的目标
+    if (m_TextureType == TextureType::TEXTURE_CUBE) {
+        GLCall(glBindTexture(GL_TEXTURE_CUBE_MAP, 0));
+    } else {
+        GLCall(glBindTexture(GL_TEXTURE_2D, 0));
+    }
 }
 
 // 设置边框颜色

@@ -8,6 +8,9 @@
 #include "MaterialComponent.h"
 #include "Globals.h"
 #include <GLFW/glfw3.h>
+#include <3D/SkyBoxModel.h>
+#include <memory>
+#include "Texture.h"
 
 void BaseScene::Initialize() {
     LOG_INFO("BaseScene: Initializing scene...");
@@ -27,7 +30,7 @@ void BaseScene::Initialize() {
     // 5. 建立局部光源索引
     BuildLightIndex();
 
-	// 6. 阴影贴图相关
+    // 6. 阴影贴图相关
     InitializeShadowSystem();
 
     LOG_INFO("\tEntities initialized: Count={}", m_Entities.size());
@@ -44,19 +47,89 @@ void BaseScene::Update(float delataTime) {
 
 void BaseScene::Render(const Renderer& renderer) {
     LOG_TRACE("BaseScene: Starting render");
+    
     // Step1: Shadow Pass
     RenderShadowPass(renderer);
 
     // Step2: Main Pass
-    renderer.Clear();     // 使用传入的 renderer
+    renderer.Clear();
     glm::mat4 view = GetCamera().GetViewMatrix();
     glm::mat4 projection = GetCamera().GetProjectionMatrix();
 
-    // 使用传入的 renderer
+    // 🆕 Step3: 渲染天空盒（在其他物体之前，作为背景）
+    RenderSkybox();
+
+    // Step4: 渲染场景实体
     RenderAllEntities(renderer, view, projection);
 
     LOG_TRACE("BaseScene: Render complete");
 }
+
+void BaseScene::RenderSkybox() {
+    // 创建天空盒模型（只创建一次）
+    static std::unique_ptr<SkyBoxModel> skyboxModel = nullptr;
+    if (!skyboxModel) {
+        skyboxModel = std::make_unique<SkyBoxModel>();
+        LOG_INFO("BaseScene: SkyBoxModel created");
+    }
+    
+    // 创建/加载立方体贴图纹理（只加载一次）
+    if (!m_skyboxTexture) {
+        std::vector<std::string> cubeMapFaces = {
+            "res/cubemap/Lycksele2/posx.jpg",
+            "res/cubemap/Lycksele2/negx.jpg",
+            "res/cubemap/Lycksele2/posy.jpg",
+            "res/cubemap/Lycksele2/negy.jpg",
+            "res/cubemap/Lycksele2/posz.jpg",
+            "res/cubemap/Lycksele2/negz.jpg"
+        };
+        
+        // 🔧 简化：直接赋值unique_ptr
+        m_skyboxTexture = Texture::CreateCubeMapFromSixImages(
+            cubeMapFaces,
+            TextureFilterMode::LINEAR,
+            TextureFilterMode::LINEAR,
+            false
+        );
+        
+        if (m_skyboxTexture) {
+            LOG_INFO("BaseScene: Skybox cube map texture created from 6 images");
+        } else {
+            LOG_ERROR("BaseScene: Failed to create skybox cube map texture");
+            return;
+        }
+    }
+    
+    // 🆕 创建天空盒着色器（只创建一次）
+    static std::unique_ptr<Shader> skyboxShader = nullptr;
+    if (!skyboxShader) {
+        skyboxShader = std::make_unique<Shader>("res/shaders/Skybox/Skybox.shader");
+        LOG_INFO("BaseScene: Skybox shader created");
+    }
+    
+    // 🔧 绑定着色器
+    skyboxShader->Bind();
+    
+    // 🔧 计算天空盒变换矩阵：移除平移，只保留旋转
+    const auto& camera = GetCamera();
+    glm::mat4 view = camera.GetViewMatrix();
+    glm::mat4 skyboxView = glm::mat4(glm::mat3(view));  // 移除平移分量
+    glm::mat4 projection = camera.GetProjectionMatrix();
+
+    // 🔧 传递uniform变量
+    skyboxShader->SetUniformMat4fv("view", skyboxView);
+    skyboxShader->SetUniformMat4fv("projection", projection);
+    
+    // 🔧 绑定立方体贴图纹理
+    m_skyboxTexture->Bind();
+    skyboxShader->SetUniform1i("skybox", m_skyboxTexture->GetAssignedSlot());
+    
+    // 🔧 渲染天空盒
+    skyboxModel->Draw(*skyboxShader, m_renderer);
+    
+    LOG_DEBUG("BaseScene: Skybox rendered successfully");
+}
+
 
 void BaseScene::SetEntityInitializer(EnityInitializer initializer) {
     enityInitializer = initializer;
@@ -121,7 +194,7 @@ void BaseScene::ApplyIndexedLightsToShader(Shader& shader, const glm::mat4& view
             shader.SetUniformMat4fv("lightSpaceMatrix", shadowComp->GetLightSpaceMatrix());
             shader.SetUniform1f("shadowBias", shadowComp->GetBias());
 
-            // 🆕 传递 PCF 控制参数
+            // 传递 PCF 控制参数
             shader.SetUniform1i("enablePCF", shadowComp->IsPCFEnabled() ? 1 : 0);
             shader.SetUniform1i("pcfSamples", shadowComp->GetPCFSamples());
             shader.SetUniform1f("pcfRadius", shadowComp->GetPCFRadius());
@@ -133,7 +206,7 @@ void BaseScene::ApplyIndexedLightsToShader(Shader& shader, const glm::mat4& view
         else {
             LOG_WARNING("\t\t\tNo shadow component found on light '{}'", lightEntity->GetName());
             
-            // 🆕 如果没有阴影，传递默认值避免着色器错误
+            // 如果没有阴影，传递默认值避免着色器错误
             shader.SetUniform1i("enablePCF", 0);
             shader.SetUniform1f("shadowBias", 0.0f);
         }
@@ -237,27 +310,26 @@ void BaseScene::UpdateDynamicLights(float deltaTime) {
 
 void BaseScene::ApplyGlobalLightToShader(RenderComponent& renderComp) {
     auto shader = renderComp.GetShader();
-    if(!shader) {
+    if (!shader) {
         LOG_ERROR("RenderComponent has no shader to apply global light.");
         return;
     }
     m_globalLight.ApplyToShader(*shader);
 }
 
-
 void BaseScene::InitializeShadowSystem() {
     LOG_INFO("BaseScene: Initializing shadow system...");
 
     int shadowLightCount = 0;
     for (auto& entity : m_Entities) {
-		// ShadowComponent 默认应只在光源实体里面即一个Enitity要么同时有LightComponent和ShadowComponent，要么仅有LightComponent
+        // ShadowComponent 默认应只在光源实体里面即一个Enitity要么同时有LightComponent和ShadowComponent，要么仅有LightComponent
         auto shadowComp = entity->GetComponent<ShadowComponent>();
         if (shadowComp && shadowComp->IsEnabled()) {
             LOG_INFO("\tFound shadow light: {}", entity->GetName());
             shadowLightCount++;
         }
         else {
-			LOG_WARNING("\tEntity '{}' has no shadow component or is disabled", entity->GetName());
+            LOG_WARNING("\tEntity '{}' has no shadow component or is disabled", entity->GetName());
         }
     }
 
@@ -294,3 +366,4 @@ void BaseScene::RenderShadowPass(const Renderer& renderer) {
         break; // 目前只处理一个阴影光源
     }
 }
+
