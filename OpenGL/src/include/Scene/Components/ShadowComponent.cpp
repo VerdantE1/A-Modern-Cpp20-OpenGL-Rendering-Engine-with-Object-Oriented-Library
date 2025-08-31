@@ -90,6 +90,10 @@ void ShadowComponent::BeginShadowPass() {
     // Step4: 禁用颜色写入，只写入深度
     glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
 
+    // 斜率偏移，减少阴影痤疮而无需巨大的bias
+    glEnable(GL_POLYGON_OFFSET_FILL);
+    glPolygonOffset(2.0f, 4.0f);
+
     LOG_TRACE("ShadowComponent: Shadow framebuffer {} bound, viewport set to {}x{}",
         m_shadowFramebuffer, m_shadowMapWidth, m_shadowMapHeight);
 }
@@ -98,6 +102,8 @@ void ShadowComponent::EndShadowPass() {
     if (!IsEnabled()) return;
 
     LOG_DEBUG("ShadowComponent: Ending shadow pass");
+
+    glDisable(GL_POLYGON_OFFSET_FILL);
 
     // Step1: 恢复颜色写入
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
@@ -122,35 +128,57 @@ void ShadowComponent::Update(float deltaTime) {
 	LOG_INFO("ShadowComponent: Updated light space matrix");
 }
 
-void ShadowComponent::RenderShadowCasters(const Renderer& renderer, const std::vector<std::unique_ptr<Entity>>& entities) {
+void ShadowComponent::RenderShadowCasters(const Renderer& renderer,
+    const std::vector<std::unique_ptr<Entity>>& entities) {
     if (!IsEnabled()) return;
-
     auto shadowShader = GetShadowShader();
-    if (!shadowShader) {
-        LOG_ERROR("ShadowComponent: No shadow shader available");
-        return;
-    }
+    if (!shadowShader) return;
 
     glm::mat4 lightSpaceMatrix = GetLightSpaceMatrix();
 
-    // ShadowComponent 自己渲染所有实体
-    for (const auto& entity : entities) {
-        auto renderComp = entity->GetComponent<RenderComponent>();
-        auto transform = entity->GetTransform();
+    for (const auto& e : entities) {
+        // 跳过光源自己（有 LightComponent 且就是我的 owner）
+        if (e.get() == GetOwner() || e->GetComponent<LightComponent>()) continue;
 
-        if (!renderComp || !transform) continue;
-        auto geometry = renderComp->GetGeometry();
-        if (!geometry) continue;
+        auto rc = e->GetComponent<RenderComponent>();
+        auto tf = e->GetTransform();
+        if (!rc || !tf || !rc->GetGeometry()) continue;
 
-        // 使用 ShadowComponent 自己的着色器
-		
         shadowShader->Bind();
         shadowShader->SetUniformMat4fv("lightSpaceMatrix", lightSpaceMatrix);
-        shadowShader->SetUniformMat4fv("model", transform->GetMatrix());
+        shadowShader->SetUniformMat4fv("model", tf->GetMatrix());
+        renderer.Draw(*rc->GetGeometry(), *shadowShader);
+    }
+}
 
-        
-        renderer.Draw(*geometry, *shadowShader);
-		LOG_INFO("ShadowComponent: Rendered shadow caster '{}'", entity->GetName());
+void ShadowComponent::SetShadowQuality(ShadowQuality quality)
+{
+    switch (quality) {
+    case ShadowQuality::HARD_SHADOW:
+        m_enablePCF = false;
+        m_pcfSamples = 1;
+        m_pcfRadius = 1.0f;
+        break;
+    case ShadowQuality::SOFT_LOW:
+        m_enablePCF = true;
+        m_pcfSamples = 4;
+        m_pcfRadius = 1.0f;
+        break;
+    case ShadowQuality::SOFT_MEDIUM:
+        m_enablePCF = true;
+        m_pcfSamples = 9;
+        m_pcfRadius = 1.5f;
+        break;
+    case ShadowQuality::SOFT_HIGH:
+        m_enablePCF = true;
+        m_pcfSamples = 16;
+        m_pcfRadius = 2.0f;
+        break;
+    case ShadowQuality::SOFT_ULTRA:
+        m_enablePCF = true;
+        m_pcfSamples = 25;
+        m_pcfRadius = 2.5f;
+        break;
     }
 }
 
@@ -226,93 +254,35 @@ void ShadowComponent::CalculateLightSpaceMatrix() {
     auto transform = GetOwner()->GetTransform();
 
     if (!lightComp || !transform) {
-        LOG_ERROR("ShadowComponent: Cannot calculate light space matrix - missing light or transform");
+        LOG_ERROR("ShadowComponent: Cannot calculate light space matrix");
         return;
     }
 
-    // 步骤1: 获取光源位置
     glm::vec3 lightPos = transform->GetPosition();
-    LOG_TRACE("ShadowComponent: Light position: ({}, {}, {})", lightPos.x, lightPos.y, lightPos.z);
 
-    // 步骤2: 根据光源类型计算投影矩阵和视图矩阵
-    glm::mat4 lightProjection;
-    glm::mat4 lightView;
-
-    switch (lightComp->GetLightType()) {
-    case LightComponent::LightType::DIRECTIONAL: {
-        // 方向光: 使用正交投影
-        float orthoSize = 10.0f;
-        lightProjection = glm::ortho(-orthoSize, orthoSize, -orthoSize, orthoSize,
-            m_nearPlane, m_farPlane);
-
-        // 方向光从无限远处照射，位置是方向的反向
-        glm::vec3 lightTarget = glm::vec3(0.0f);  // 照射目标
-        glm::vec3 lightDirection = glm::normalize(lightComp->direction);
-        glm::vec3 lightPosition = lightTarget - lightDirection * 10.0f;  // 远处位置
-
-        lightView = glm::lookAt(lightPosition, lightTarget, glm::vec3(0.0f, 1.0f, 0.0f));
-        LOG_TRACE("ShadowComponent: Directional light - ortho projection");
-        break;
-    }
-    case LightComponent::LightType::POINT: {
-        // 点光源: 使用透视投影
-        lightProjection = glm::perspective(glm::radians(90.0f), 1.0f, m_nearPlane, m_farPlane);
-
-        // 从光源位置看向场景中心
-        glm::vec3 lightTarget = glm::vec3(0.0f, 0.0f, 0.0f);  // 场景中心
-        glm::vec3 lightDirection = glm::normalize(lightTarget - lightPos);
-
-        lightView = glm::lookAt(
-            lightPos,                           // 光源位置（摄像机位置）
-            lightTarget,                        // 看向的目标点
-            glm::vec3(0.0f, 1.0f, 0.0f)        // 上方向向量
+    if (lightComp->GetLightType() == LightComponent::LightType::POINT) {
+        // 🔧 修复：使用合理的投影参数
+        glm::mat4 lightProjection = glm::perspective(
+            glm::radians(160.0f),    // 🔧 90度FOV，标准点光源
+            1.0f,                   // 正方形纵横比
+            1.0f,                   // 🔧 合理的近平面
+            20.0f                   // 🔧 合理的远平面
         );
 
-        LOG_TRACE("ShadowComponent: Point light - perspective projection, FOV=90°");
-        LOG_TRACE("ShadowComponent: Point light looking from ({}, {}, {}) to ({}, {}, {})",
-            lightPos.x, lightPos.y, lightPos.z,
-            lightTarget.x, lightTarget.y, lightTarget.z);
-        break;
-    }
-    case LightComponent::LightType::SPOT: {
-        // 聚光灯: 使用透视投影
-        float spotAngle = glm::acos(lightComp->cutOff) * 2.0f;  // 从cutOff计算全角度
-        float spotAngleDegrees = glm::degrees(spotAngle);
-
-        // 确保角度在合理范围内
-        if (spotAngleDegrees < 10.0f) spotAngleDegrees = 10.0f;
-        if (spotAngleDegrees > 120.0f) spotAngleDegrees = 120.0f;
-
-        lightProjection = glm::perspective(glm::radians(spotAngleDegrees), 1.0f, m_nearPlane, m_farPlane);
-
-        // 聚光灯从光源位置沿着指定方向照射
-        glm::vec3 lightDirection = glm::normalize(lightComp->direction);
-        glm::vec3 lightTarget = lightPos + lightDirection * 5.0f;  // 沿方向延伸一段距离作为目标点
-
-        lightView = glm::lookAt(
+        // 🔧 修复：计算正确的场景中心
+        glm::vec3 sceneCenter = glm::vec3(0.0f, -1.25f, -1.0f);  // 基于物体和地面的实际位置
+        
+        glm::mat4 lightView = glm::lookAt(
             lightPos,                           // 光源位置
-            lightTarget,                        // 沿光线方向的目标点
-            glm::vec3(0.0f, 1.0f, 0.0f)        // 上方向向量
+            sceneCenter,                        // 场景中心
+            glm::vec3(0.0f, 1.0f, 0.0f)        // 上方向
         );
 
-        LOG_TRACE("ShadowComponent: Spot light - perspective projection, FOV={:.1f}°", spotAngleDegrees);
-        LOG_TRACE("ShadowComponent: Spot light direction: ({}, {}, {})",
-            lightDirection.x, lightDirection.y, lightDirection.z);
-        break;
+        m_lightSpaceMatrix = lightProjection * lightView;
+        
+        LOG_INFO("ShadowComponent: Light space matrix - Light:({:.2f},{:.2f},{:.2f}) → Target:({:.2f},{:.2f},{:.2f})",
+            lightPos.x, lightPos.y, lightPos.z, sceneCenter.x, sceneCenter.y, sceneCenter.z);
     }
-    default: {
-        LOG_ERROR("ShadowComponent: Unknown light type, using default perspective projection");
-        lightProjection = glm::perspective(glm::radians(45.0f), 1.0f, m_nearPlane, m_farPlane);
-        lightView = glm::lookAt(lightPos, glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-        break;
-    }
-    }
-    
-    // 重点：计算最终的光源空间矩阵
-    m_lightSpaceMatrix = lightProjection * lightView;
-    LOG_TRACE("ShadowComponent: Light space matrix calculated for {} light",
-        lightComp->GetLightType() == LightComponent::LightType::DIRECTIONAL ? "directional" :
-        lightComp->GetLightType() == LightComponent::LightType::POINT ? "point" : "spot");
 }
 
 std::shared_ptr<Shader> ShadowComponent::GetShadowShader() {
@@ -333,3 +303,8 @@ std::shared_ptr<Shader> ShadowComponent::CreateShadowShader() {
         return nullptr;
     }
 }
+
+void ShadowComponent::ApplyToShader(Shader& shader) {
+
+}
+

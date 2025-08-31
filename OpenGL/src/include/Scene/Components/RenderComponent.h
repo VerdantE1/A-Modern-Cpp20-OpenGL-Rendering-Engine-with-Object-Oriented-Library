@@ -44,6 +44,8 @@ public:
         // 1. 设置基础矩阵
         m_Shader->SetUniformMat4fv("proj_matrix", projectionMatrix);
         m_Shader->SetUniformMat4fv("mv_matrix", viewMatrix * modelMatrix);
+        m_Shader->SetUniformMat4fv("norm_matrix", glm::transpose(glm::inverse(viewMatrix * modelMatrix)));
+        m_Shader->SetUniformMat4fv("model", modelMatrix); // 🆕 新增
         
         if (m_NeedsNormalMatrix) {
             glm::mat4 normalMatrix = glm::transpose(glm::inverse(viewMatrix * modelMatrix));

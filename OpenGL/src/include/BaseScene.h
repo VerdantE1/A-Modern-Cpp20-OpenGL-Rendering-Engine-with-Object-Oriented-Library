@@ -22,6 +22,9 @@ public:
     
     Renderer& GetRenderer();
 
+    //提供访问实体的方法（供Engine使用）
+    const std::vector<std::unique_ptr<Entity>>& GetAllEntities() const { return m_Entities; }
+
 private:
     CameraConfig cameraConfig;
     EnityInitializer enityInitializer;

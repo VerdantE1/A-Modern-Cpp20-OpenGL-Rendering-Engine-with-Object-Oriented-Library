@@ -71,74 +71,23 @@ Renderer& BaseScene::GetRenderer() {
     return m_renderer; 
 }
 
-void BaseScene::RenderAllEntities(const Renderer& renderer, const glm::mat4& view, const glm::mat4& projection) {
-    LOG_DEBUG("\tRendering {} entities", m_Entities.size());
-
-    for (auto& entity : m_Entities) {
-        auto renderComp = entity->GetComponent<RenderComponent>();
-        auto transform = entity->GetTransform();
-
-        // 跳过没有RenderComponent的Entity（如光源Entity）
-        if (!renderComp || !transform) {
-            continue;
-        }
-
-        auto shader = renderComp->GetShader();
-        auto geometry = renderComp->GetGeometry();
-
-        if (!shader || !geometry || shader->GetID() == 0) {
-            LOG_ERROR("\t\tEntity '{}' has invalid render components", entity->GetName());
-            continue;
-        }
-
-        shader->Bind();
-        LOG_DEBUG("\t\tRendering entity '{}' with shader ID {}", entity->GetName(), shader->GetID());
-
-        // 应用全局光照
-        ApplyGlobalLightToShader(*renderComp);
-
-        // 快速应用局部光源数据（无需遍历）
-        ApplyIndexedLightsToShader(*shader, view);
-
-        // 执行渲染（会自动调用所有组件的 ApplyToShader，包括 MaterialComponent）
-        renderComp->Render(renderer, projection, view, transform->GetMatrix());
-        LOG_DEBUG("\t\tEntity '{}' rendered successfully", entity->GetName());
-    }
-    LOG_DEBUG("\tAll entities rendered");
-}
-
-void BaseScene::BuildLightIndex() {
-    m_lightIndex.clear();
-    for (auto& entity : m_Entities) {
-        auto lightComp = entity->GetComponent<LightComponent>();
-        if (lightComp) {
-            m_lightIndex[entity->GetName()] = lightComp;
-            LOG_DEBUG("Indexed light: {}", entity->GetName());
-        }
-    }
-}
-
 void BaseScene::ApplyIndexedLightsToShader(Shader& shader, const glm::mat4& view) {
     if (m_lightIndex.empty()) {
         LOG_WARNING("No indexed lights found");
         return;
     }
 
-    // 取第一个光源（可扩展为多光源支持）
     auto lightIt = m_lightIndex.begin();
     auto* lightComp = lightIt->second;
 
     if (lightComp && lightComp->enabled) {
         auto* lightEntity = lightComp->GetOwner();
 
-        // 获取光源位置并转换到视图空间
+        // ========== 只应用光源数据 ==========
         if (auto transform = lightEntity->GetTransform()) {
             glm::vec3 worldPos = transform->GetPosition();
             glm::vec3 viewPos = glm::vec3(view * glm::vec4(worldPos, 1.0f));
-
             shader.SetUniform3f("light.position", viewPos.x, viewPos.y, viewPos.z);
-            LOG_DEBUG("\t\t\tLight '{}' position (view): ({}, {}, {})",
-                lightEntity->GetName(), viewPos.x, viewPos.y, viewPos.z);
         }
 
         // 应用光源属性
@@ -157,15 +106,89 @@ void BaseScene::ApplyIndexedLightsToShader(Shader& shader, const glm::mat4& view
             lightComp->specular.g * lightComp->intensity,
             lightComp->specular.b * lightComp->intensity,
             lightComp->specular.a);
+
+        // ========== 应用阴影数据 ==========
+        auto shadowComp = lightEntity->GetComponent<ShadowComponent>();
+        if (shadowComp && shadowComp->IsEnabled()) {
+            LOG_INFO("\t\t\tApplying shadow data from light '{}'", lightEntity->GetName());
+            
+            // 绑定阴影贴图到纹理单元1
+            glActiveTexture(GL_TEXTURE1);
+            glBindTexture(GL_TEXTURE_2D, shadowComp->GetShadowMapTexture());
+
+            // 传递阴影相关 uniform 数据
+            shader.SetUniform1i("shadowMap", 1);
+            shader.SetUniformMat4fv("lightSpaceMatrix", shadowComp->GetLightSpaceMatrix());
+            shader.SetUniform1f("shadowBias", shadowComp->GetBias());
+
+            // 🆕 传递 PCF 控制参数
+            shader.SetUniform1i("enablePCF", shadowComp->IsPCFEnabled() ? 1 : 0);
+            shader.SetUniform1i("pcfSamples", shadowComp->GetPCFSamples());
+            shader.SetUniform1f("pcfRadius", shadowComp->GetPCFRadius());
+
+            LOG_INFO("\t\t\tShadow uniforms applied - Texture:{}, PCF:{}, Samples:{}, Radius:{}, Bias:{}",
+                shadowComp->GetShadowMapTexture(), shadowComp->IsPCFEnabled(), 
+                shadowComp->GetPCFSamples(), shadowComp->GetPCFRadius(), shadowComp->GetBias());
+        }
+        else {
+            LOG_WARNING("\t\t\tNo shadow component found on light '{}'", lightEntity->GetName());
+            
+            // 🆕 如果没有阴影，传递默认值避免着色器错误
+            shader.SetUniform1i("enablePCF", 0);
+            shader.SetUniform1f("shadowBias", 0.0f);
+        }
     }
 }
 
-void BaseScene::AddLightToIndex(const std::string& name, LightComponent* lightComp) {
-    m_lightIndex[name] = lightComp;
+void BaseScene::RenderAllEntities(const Renderer& renderer, const glm::mat4& view, const glm::mat4& projection) {
+    LOG_DEBUG("\tRendering {} entities", m_Entities.size());
+
+    for (auto& entity : m_Entities) {
+        auto renderComp = entity->GetComponent<RenderComponent>();
+        auto transform = entity->GetTransform();
+
+        if (!renderComp || !transform) continue;
+
+        auto shader = renderComp->GetShader();
+        auto geometry = renderComp->GetGeometry();
+
+        if (!shader || !geometry || shader->GetID() == 0) {
+            LOG_ERROR("\t\tEntity '{}' has invalid render components", entity->GetName());
+            continue;
+        }
+
+        shader->Bind();
+        LOG_DEBUG("\t\tRendering entity '{}' with shader ID {}", entity->GetName(), shader->GetID());
+
+        // 检查是否为光源实体，设置Unlit标志
+        bool isLightSource = entity->GetComponent<LightComponent>() != nullptr;
+   
+        // 应用全局光照
+        ApplyGlobalLightToShader(*renderComp);
+
+        // 只有非光源实体才应用光源数据
+        if (!isLightSource) {
+            ApplyIndexedLightsToShader(*shader, view);
+        }
+
+        shader->SetUniform1i("isLightSource", isLightSource ? 1 : 0);
+        LOG_INFO("Setting isLightSource={} for entity '{}'", isLightSource, entity->GetName());
+        // 执行渲染
+        renderComp->Render(renderer, projection, view, transform->GetMatrix());
+        LOG_DEBUG("\t\tEntity '{}' rendered successfully", entity->GetName());
+    }
+    LOG_DEBUG("\tAll entities rendered");
 }
 
-void BaseScene::RemoveLightFromIndex(const std::string& name) {
-    m_lightIndex.erase(name);
+void BaseScene::BuildLightIndex() {
+    m_lightIndex.clear();
+    for (auto& entity : m_Entities) {
+        auto lightComp = entity->GetComponent<LightComponent>();
+        if (lightComp) {
+            m_lightIndex[entity->GetName()] = lightComp;
+            LOG_DEBUG("Indexed light: {}", entity->GetName());
+        }
+    }
 }
 
 void BaseScene::SetGlobalLight() {
@@ -197,19 +220,19 @@ void BaseScene::UpdateAllEntity(float deltaTime) {
 }
 
 void BaseScene::UpdateDynamicLights(float deltaTime) {
-    float currentTime = static_cast<float>(glfwGetTime());
-    currentLightPos = glm::vec3(
-        initialLightLoc.x + sin(currentTime * 0.8f) * 3.0f,
-        initialLightLoc.y + cos(currentTime * 0.6f) * 2.0f,
-        initialLightLoc.z
-    );
-    // 更新所有光源组件的位置
-    for (auto& entity : m_Entities) {
-        auto lightComp = entity->GetComponent<LightComponent>();
-        if (lightComp) {
-            entity->GetTransform()->SetPosition(currentLightPos);
-        }
-    }
+    //float currentTime = static_cast<float>(glfwGetTime());
+    //currentLightPos = glm::vec3(
+    //    initialLightLoc.x + sin(currentTime * 0.8f) * 3.0f,
+    //    initialLightLoc.y + cos(currentTime * 0.6f) * 2.0f,
+    //    initialLightLoc.z
+    //);
+    //// 更新所有光源组件的位置
+    //for (auto& entity : m_Entities) {
+    //    auto lightComp = entity->GetComponent<LightComponent>();
+    //    if (lightComp) {
+    //        entity->GetTransform()->SetPosition(currentLightPos);
+    //    }
+    //}
 }
 
 void BaseScene::ApplyGlobalLightToShader(RenderComponent& renderComp) {
@@ -261,7 +284,7 @@ void BaseScene::RenderShadowPass(const Renderer& renderer) {
         // 1. 开始阴影Pass
         shadowComp->BeginShadowPass();
 
-        // 2. ShadowComponent 自己渲染阴影投射者
+        // 2. ShadowComponent 渲染阴影贴图
         shadowComp->RenderShadowCasters(renderer, m_Entities);
 
         // 3. 结束阴影Pass
