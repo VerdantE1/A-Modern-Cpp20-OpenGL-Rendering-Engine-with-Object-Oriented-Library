@@ -202,12 +202,12 @@ void ShadowComponent::InitializeShadowMap() {
         GL_DEPTH_COMPONENT, GL_FLOAT, NULL));
 
     // Step4: 设置纹理过滤参数
-    GLCall(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST));
+    GLCall(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST));
+    GLCall(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST));
 
     // Step5: 设置纹理包装模式（防止边界采样问题）
-    GLCall(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER));
+    GLCall(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER));
+    GLCall(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER));
 
     // Step6: 设置边界颜色为白色（边界外认为没有阴影）
     float borderColor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
@@ -308,3 +308,17 @@ void ShadowComponent::ApplyToShader(Shader& shader) {
 
 }
 
+// 新增：把深度图绑定到固定槽位（TextureSlots::ShadowMap）
+void ShadowComponent::BindDepthTextureToFixedSlot() const
+{
+    const auto slot = static_cast<unsigned>(TextureSlots::ShadowMap);
+    GLCall(glActiveTexture(GL_TEXTURE0 + slot));
+    GLCall(glBindTexture(GL_TEXTURE_2D, GetShadowMapTexture()));
+}
+
+// 新增：将采样器名绑定到固定槽位（samplerUniform 需与你的光照shader一致，如"shadowMap"）
+void ShadowComponent::ApplyShadowUniforms(Shader& shader, const char* samplerUniform) const
+{
+    shader.Bind();
+    shader.SetUniform1i(samplerUniform, static_cast<int>(TextureSlots::ShadowMap));
+}

@@ -333,6 +333,30 @@ GLint Texture::GetGLWrapMode(TextureWrapMode mode) const
     }
 }
 
+void Texture::BindToUnit(unsigned unit)
+{
+    // 若原先有自动分配槽且不同于目标槽，释放它
+    if (m_AssignedSlot != static_cast<unsigned>(-1) && m_AssignedSlot != unit) {
+        ReleaseSlot(m_AssignedSlot);
+    }
+
+    // 该unit将被占用，不再视为可复用
+    s_AvailableSlots.erase(unit);
+    if (unit >= s_MaxSlotUsed) {
+        s_MaxSlotUsed = unit + 1;
+    }
+
+    m_AssignedSlot = unit;
+
+    // 立即在该槽位下完成实际的 GL 绑定
+    GLCall(glActiveTexture(GL_TEXTURE0 + m_AssignedSlot));
+    if (m_TextureType == TextureType::TEXTURE_CUBE) {
+        GLCall(glBindTexture(GL_TEXTURE_CUBE_MAP, m_id));
+    } else {
+        GLCall(glBindTexture(GL_TEXTURE_2D, m_id));
+    }
+}
+
 
 /*
  * Copyright (c) 2025 

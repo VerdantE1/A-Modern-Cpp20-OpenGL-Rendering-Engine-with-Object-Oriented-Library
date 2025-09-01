@@ -538,6 +538,7 @@
     <None Include="res\shaders\Blinn-Phong.shader" />
     <None Include="res\shaders\Cube.shader" />
     <None Include="res\shaders\CubeMultiInstances.shader" />
+    <None Include="res\shaders\EnvMapping\EnvMapping.shader" />
     <None Include="res\shaders\Gouraud.shader" />
     <None Include="res\shaders\OnePoint.shader" />
     <None Include="res\shaders\Phong.shader" />

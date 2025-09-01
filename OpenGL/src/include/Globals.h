@@ -47,6 +47,9 @@
 #define PHONG_SHADER_PATH "res/shaders/Phong.shader"
 #define SHADOW_MAPPING_SHADER_PATH "res/shaders/ShadowShader/ShadowPass.shader"
 #define SHADOW_MAPPING_RENDER_SHADER_PATH "res/shaders/ShadowShader/RenderPass.shader"
+#define SKYBOX_SHADER_PATH "res/shaders/Skybox/Skybox.shader"
+#define ENVMAPPING_SHADER_PATH "res/shaders/EnvMapping/EnvMapping.shader"
+
 
 // 需要OpenGL上下文
 inline std::shared_ptr<Shader> gouraudShaderPtr = nullptr;
@@ -54,6 +57,7 @@ inline std::shared_ptr<Shader> blinnPhongShaderPtr = nullptr;
 inline std::shared_ptr<Shader> phongShaderPtr = nullptr;
 inline std::shared_ptr<Shader> shadowMappingShaderPtr = nullptr;
 inline std::shared_ptr<Shader> shadowMappingRenderShaderPtr = nullptr;
+inline std::shared_ptr<Shader> envMappingShaderPtr = nullptr; // 环境贴图着色器
 
 inline void InitializeGlobalShaders() {
 	static bool initialized = false;
@@ -64,8 +68,10 @@ inline void InitializeGlobalShaders() {
 		gouraudShaderPtr = std::make_shared<Shader>(GOURAUD_SHADER_PATH);
 		blinnPhongShaderPtr = std::make_shared<Shader>(BLINN_PHONG_SHADER_PATH);
 		phongShaderPtr = std::make_shared<Shader>(PHONG_SHADER_PATH);
-		//shadowMappingShaderPtr = std::make_shared<Shader>(SHADOW_MAPPING_SHADER_PATH);
+		shadowMappingShaderPtr = std::make_shared<Shader>(SHADOW_MAPPING_SHADER_PATH);
 		shadowMappingRenderShaderPtr = std::make_shared<Shader>(SHADOW_MAPPING_RENDER_SHADER_PATH);
+		envMappingShaderPtr = std::make_shared<Shader>(ENVMAPPING_SHADER_PATH);
+
 
 		initialized = true;
 		if (!gouraudShaderPtr)  LOG_ERROR("gouraudShaderPtr is null after initialization!");
@@ -83,6 +89,9 @@ inline void InitializeGlobalShaders() {
 		if (!shadowMappingRenderShaderPtr) LOG_ERROR("shadowMappingRenderShaderPtr is null after initialization!");
 		else LOG_LEVEL_INFO(1,"Shadow Mapping Render shader initialized successfully.");
 
+		if (!envMappingShaderPtr) LOG_ERROR("envMappingShaderPtr is null after initialization!");
+		else LOG_LEVEL_INFO(1, "Environment Mapping shader initialized successfully.");
+
 	}
 	catch (const std::exception& e) {
 		LOG_ERROR("Failed to initialize global shaders: {}", e.what());
@@ -93,6 +102,7 @@ inline void InitializeGlobalShaders() {
 inline std::shared_ptr<Sphere> global_spherePtr = nullptr;
 inline std::shared_ptr<Torus> global_torusPtr = nullptr;
 inline std::shared_ptr<Cube> global_cubePtr = nullptr;	
+
 
 // ✅ 添加延迟初始化函数
 inline void InitializeGlobalObjects() {
@@ -154,6 +164,17 @@ struct RenderConfig {
 	}
 };
 
+
+/***************************************************纹理约束****************************************************************8*/
+// 统一的纹理槽位约定，避免不同系统互抢
+enum class TextureSlots : unsigned {
+	Albedo = 0,  // 常规2D漫反射/颜色纹理
+	ShadowMap = 1,  // 阴影贴图（你在 BaseScene 里已用 GL_TEXTURE1）
+	Normal = 2,
+	Specular = 3,
+	EnvCube = 7,  // 环境贴图（选择较高槽位，尽量避开其它占用）
+	// 需要时可继续追加
+};
 
 /******************************************* 全局光变量  *************************************************/
 
@@ -231,8 +252,6 @@ struct CameraConfig {
 		return Camera(position, target, up, fov, aspectRatio, nearPlane, farPlane);
 	}
 };
-
-
 
 
 

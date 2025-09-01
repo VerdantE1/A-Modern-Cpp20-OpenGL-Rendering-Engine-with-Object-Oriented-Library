@@ -118,6 +118,9 @@ public:
     
     static unsigned int GetNextAvailableSlot();
     static void ReleaseSlot(unsigned int slot);
+
+    // 把此纹理显式绑定到指定槽位（稳定槽位）
+    void BindToUnit(unsigned unit);
 };
 
 

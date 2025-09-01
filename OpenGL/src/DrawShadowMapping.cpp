@@ -42,19 +42,79 @@ void enityInitializer_func(Scene* scene) {
         E_leftSphere->GetTransform()->SetScale(1.0f, 1.0f, 1.0f);
     }
 
-    // 🔧 简化地面设置
-    auto E_ground = scene->CreateEntity("ground");
+    // 创建环境贴图Toruhs
+    auto E_envTorus = scene->CreateEntity("envTorus");
     {
-        auto renderComp = E_ground->AddComponent<RenderComponent>(
-            global_cubePtr,
-            shadowMappingRenderShaderPtr
-        );
-        E_ground->AddComponent<MaterialComponent>(MaterialComponent::MaterialType::GRANITE);
+		auto shaderForEnv = envMappingShaderPtr ? envMappingShaderPtr : phongShaderPtr; // 如果环境贴图着色器不可用则回退到Phong
+        auto TorhusPtr = std::make_shared<Torus>();
 
-        // 🔧 修复地面位置 - 更合理的布局
-        E_ground->GetTransform()->SetPosition(0.0f, -3.5f, -1.0f);   // 地面在物体下方
-        E_ground->GetTransform()->SetScale(10.0f, 0.1f, 10.0f);      // 适中的地面
+        auto renderComp = E_envTorus->AddComponent<RenderComponent>(
+            TorhusPtr,
+            shaderForEnv
+		);
+
+		renderComp->SetNeedsNormalMatrix(true); // 环境贴图需要法线矩阵
+
+        static std::shared_ptr<Texture> s_envCubeMap = nullptr;
+        if (!s_envCubeMap) {
+            std::vector<std::string> faces = {
+                "res/textures/skybox/right.jpg",
+                "res/textures/skybox/left.jpg",
+                "res/textures/skybox/top.jpg",
+                "res/textures/skybox/bottom.jpg",
+                "res/textures/skybox/front.jpg",
+                "res/textures/skybox/back.jpg"
+			};
+        }
+		// 只加载一次立方体贴图,工厂函数返回unique_ptr
+        if(auto cubeUniq = Texture::CreateCubeMapFromSixImages(
+            {
+                "res/cubemap/Lycksele2/posx.jpg",
+                "res/cubemap/Lycksele2/negx.jpg",
+                "res/cubemap/Lycksele2/posy.jpg",
+                "res/cubemap/Lycksele2/negy.jpg",
+                "res/cubemap/Lycksele2/posz.jpg",
+                "res/cubemap/Lycksele2/negz.jpg"
+            },
+            TextureFilterMode::LINEAR,
+            TextureFilterMode::LINEAR,
+            false
+        )) {
+            s_envCubeMap = std::move(cubeUniq);
+        }
+        else {
+            LOG_ERROR("Failed to load environment cube map texture for envTorus.");
+		}
+
+        if (s_envCubeMap) {
+            // 显式绑定到固定槽位
+            s_envCubeMap->BindToUnit(static_cast<unsigned>(TextureSlots::EnvCube));
+
+            // 设置 samplerCube uniform -> 该固定槽位
+            shaderForEnv->Bind();
+            shaderForEnv->SetUniform1i("u_EnvCube", static_cast<int>(TextureSlots::EnvCube));
+
+        }
+
+        // 让它居中放置，便于对比
+        E_envTorus->AddComponent<MaterialComponent>(MaterialComponent::MaterialType::CUSTOM);
+        E_envTorus->GetTransform()->SetPosition(3.0f, 0.0f, -15.0f);
+        E_envTorus->GetTransform()->SetScale(1.0f, 1.0f, 1.0f);
     }
+
+    // 🔧 简化地面设置
+    //auto E_ground = scene->CreateEntity("ground");
+    //{
+    //    auto renderComp = E_ground->AddComponent<RenderComponent>(
+    //        global_cubePtr,
+    //        shadowMappingRenderShaderPtr
+    //    );
+    //    E_ground->AddComponent<MaterialComponent>(MaterialComponent::MaterialType::GRANITE);
+
+    //    // 🔧 修复地面位置 - 更合理的布局
+    //    E_ground->GetTransform()->SetPosition(0.0f, -3.5f, -1.0f);   // 地面在物体下方
+    //    E_ground->GetTransform()->SetScale(10.0f, 0.1f, 10.0f);      // 适中的地面
+    //}
 
     // 🔧 光源实体
     auto E_light = scene->CreateEntity("light");
@@ -80,7 +140,7 @@ void enityInitializer_func(Scene* scene) {
         E_light->GetTransform()->SetPosition({ 2.0f, 3.0f, 1.0f });     // 🔧 调整初始位置
         E_light->GetTransform()->SetScale(0.15f, 0.15f, 0.15f);
 
-        // 🔧 重新配置阴影设置
+        // 重新配置阴影设置
         auto shadowComp = E_light->AddComponent<ShadowComponent>();
         shadowComp->SetShadowMapQuality(ShadowComponent::Quality::HIGH);
         shadowComp->SetBias(0.03f);                                    // 🔧 使用很小的偏移

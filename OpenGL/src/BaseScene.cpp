@@ -185,12 +185,13 @@ void BaseScene::ApplyIndexedLightsToShader(Shader& shader, const glm::mat4& view
         if (shadowComp && shadowComp->IsEnabled()) {
             LOG_INFO("\t\t\tApplying shadow data from light '{}'", lightEntity->GetName());
             
-            // 绑定阴影贴图到纹理单元1
-            glActiveTexture(GL_TEXTURE1);
-            glBindTexture(GL_TEXTURE_2D, shadowComp->GetShadowMapTexture());
+            // 绑定阴影贴图到固定的纹理单元
+            shadowComp->BindDepthTextureToFixedSlot();
+
+            shader.Bind();
 
             // 传递阴影相关 uniform 数据
-            shader.SetUniform1i("shadowMap", 1);
+            shader.SetUniform1i("shadowMap", static_cast<int>(TextureSlots::ShadowMap));
             shader.SetUniformMat4fv("lightSpaceMatrix", shadowComp->GetLightSpaceMatrix());
             shader.SetUniform1f("shadowBias", shadowComp->GetBias());
 

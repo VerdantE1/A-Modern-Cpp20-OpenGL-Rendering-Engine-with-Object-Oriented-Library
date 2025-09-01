@@ -1509,6 +1509,7 @@
     <None Include="res\shaders\ShadowShader\ShadowPass.shader" />
     <None Include="res\shaders\ShadowShader\RenderPass.shader" />
     <None Include="res\shaders\Skybox\Skybox.shader" />
+    <None Include="res\shaders\EnvMapping\EnvMapping.shader" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="res\textures\textures1.jpg">

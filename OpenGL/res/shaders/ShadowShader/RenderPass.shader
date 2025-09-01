@@ -47,7 +47,6 @@ void main() {
     vec3 lightDir = normalize(varyingLightDir);
     varyingHalfVec = normalize(lightDir + viewDir);
 
-    // 🧰 关键：与 ShadowPass 完全一致
     shadow_coord = lightSpaceMatrix * model * vec4(vertPos, 1.0);
 
     gl_Position = proj_matrix * P;

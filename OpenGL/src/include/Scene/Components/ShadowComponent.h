@@ -70,6 +70,11 @@ public:
     // 阴影Shader
     std::shared_ptr<Shader> GetShadowShader();
 
+    // 绑定阴影深度图到固定槽位
+    void BindDepthTextureToFixedSlot() const;
+    // 设置采样器 uniform 为固定槽位（sampler 名需与你的着色器一致）
+    void ApplyShadowUniforms(Shader& shader, const char* samplerUniform = "shadowMap") const;
+    // 统一从组件写入本组件所需的所有 uniform（渲染阶段调用）
     void ApplyToShader(Shader& shader) override;
 
 private:
