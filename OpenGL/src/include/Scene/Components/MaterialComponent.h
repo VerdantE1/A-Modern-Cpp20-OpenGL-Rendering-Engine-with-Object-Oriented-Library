@@ -57,6 +57,7 @@ public:
         CUSTOM
     };
 
+
     // 构造函数，默认为金材质
     MaterialComponent() {
         SetMaterial(MaterialType::GOLD);
@@ -85,6 +86,9 @@ public:
         shader.SetUniform4f("material.specular",
             specular.r, specular.g, specular.b, specular.a);
         shader.SetUniform1f("material.shininess", shininess);
+        if (useProceduralBump) {
+			shader.SetUniform1f("material.useProceduralBump", 1.0f);
+        }
         LOG_LEVEL_DEBUG(2, "MaterialComponent: Applied material properties to shader.");
     }
 
@@ -321,7 +325,9 @@ public:
     void SetDiffuse(const glm::vec4& diff) { diffuse = diff; m_MaterialType = MaterialType::CUSTOM; }
     void SetSpecular(const glm::vec4& spec) { specular = spec; m_MaterialType = MaterialType::CUSTOM; }
     void SetShininess(float shin) { shininess = shin; m_MaterialType = MaterialType::CUSTOM; }
-    
+	void SetUseProceduralBump(bool use) { useProceduralBump = use; }
+
+
     // 设置完整材质
     void SetMaterial(const glm::vec4& amb, const glm::vec4& diff, const glm::vec4& spec, float shin) {
         ambient = amb;
@@ -335,4 +341,5 @@ public:
 
 private:
     MaterialType m_MaterialType = MaterialType::GOLD;
+	bool useProceduralBump = false; // 是否使用程序化凹凸贴图
 };

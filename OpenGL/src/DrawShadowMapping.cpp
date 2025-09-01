@@ -98,10 +98,23 @@ void enityInitializer_func(Scene* scene) {
 
         // 让它居中放置，便于对比
         E_envTorus->AddComponent<MaterialComponent>(MaterialComponent::MaterialType::CUSTOM);
-        E_envTorus->GetTransform()->SetPosition(3.0f, 0.0f, -15.0f);
+        E_envTorus->GetTransform()->SetPosition(3.0f, 3.0f, -5.0f);
         E_envTorus->GetTransform()->SetScale(1.0f, 1.0f, 1.0f);
     }
 
+    auto E_BumpToruhs = scene->CreateEntity("BumpToruhs");
+    {
+        auto TorhusPtr = std::make_shared<Torus>();
+		auto shader = std::make_shared<Shader>("res/shaders/ShadowShader/RenderPass.shader");
+        auto renderComp = E_BumpToruhs->AddComponent<RenderComponent>(
+            TorhusPtr,
+            shader
+        );
+        E_BumpToruhs->AddComponent<MaterialComponent>(MaterialComponent::MaterialType::GOLD);
+        E_BumpToruhs->GetComponent<MaterialComponent>()->SetUseProceduralBump(true);
+        E_BumpToruhs->GetTransform()->SetPosition(3.0f, -3.0f, -5.0f);
+        E_BumpToruhs->GetTransform()->SetScale(1.0f, 1.0f, 1.0f);
+    }
     // 🔧 简化地面设置
     //auto E_ground = scene->CreateEntity("ground");
     //{
@@ -254,40 +267,67 @@ void DrawShadowMappingWithECS(GLFWwindow* window) {
         }
         });
 
-    // 键盘处理：使用L和C键
+    // 键盘处理：使用L和C键 + WSAD相机移动
     engine.SetKeyboardHandler([&](int key, int action) {
-        if (action != GLFW_PRESS) return;
-
         auto activeScene = dynamic_cast<BaseScene*>(engine.sceneManager.GetActiveScene());
         if (!activeScene) return;
 
-        switch (key) {
-        case GLFW_KEY_L:
-            // L键：光源控制模式
-            currentMode = ControlMode::LIGHT_CONTROL;
-            activeScene->GetCamera().StopMouseLook();
-            cameraState.cameraInitialized = false;
-            glfwSetWindowTitle(window, "光源控制模式 | 移动鼠标在相机平面控制光源位置 | 按C切换相机控制");
-            LOG_INFO("Switched to LIGHT_CONTROL mode");
-            break;
+        if (action != GLFW_PRESS && action != GLFW_REPEAT) return;
 
-        case GLFW_KEY_C:
-            // C键：相机控制模式
-            currentMode = ControlMode::CAMERA_CONTROL;
-            cameraState.cameraInitialized = false;
-            glfwSetWindowTitle(window, "相机控制模式 | 按住左键拖拽改变视角 | 按L切换光源控制");
-            LOG_INFO("Switched to CAMERA_CONTROL mode");
-            break;
-
-        case GLFW_KEY_R:
-            // R键：重置相机（仅在相机模式下有效）
-            if (currentMode == ControlMode::CAMERA_CONTROL) {
-                activeScene->GetCamera().ResetToOriginal();
+        if (action == GLFW_PRESS) {
+            switch (key) {
+            case GLFW_KEY_L:
+                currentMode = ControlMode::LIGHT_CONTROL;
+                activeScene->GetCamera().StopMouseLook();
                 cameraState.cameraInitialized = false;
-                glfwSetWindowTitle(window, "相机已重置 | 相机控制模式");
-                LOG_INFO("Camera reset to original position");
+                glfwSetWindowTitle(window, "光源控制模式 | 移动鼠标在相机平面控制光源位置 | 按C切换相机控制");
+                LOG_INFO("Switched to LIGHT_CONTROL mode");
+                return;
+            case GLFW_KEY_C:
+                currentMode = ControlMode::CAMERA_CONTROL;
+                cameraState.cameraInitialized = false;
+                glfwSetWindowTitle(window, "相机控制模式 | 按住左键拖拽改变视角 | 按L切换光源控制");
+                LOG_INFO("Switched to CAMERA_CONTROL mode");
+                return;
+            case GLFW_KEY_R:
+                if (currentMode == ControlMode::CAMERA_CONTROL) {
+                    activeScene->GetCamera().ResetToOriginal();
+                    cameraState.cameraInitialized = false;
+                    glfwSetWindowTitle(window, "相机已重置 | 相机控制模式");
+                    LOG_INFO("Camera reset to original position");
+                }
+                return;
+            default: break;
             }
-            break;
+        }
+
+        if (currentMode != ControlMode::CAMERA_CONTROL) return;
+
+        // 用引擎每帧dt，避免首次按下产生超大步长
+        float dt = Engine::GetInstance() ? Engine::GetInstance()->GetDeltaTime() : 1.0f / 60.0f;
+
+        float baseSpeed = 4.0f;
+        if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
+            glfwGetKey(window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS) {
+            baseSpeed *= 2.0f;
+        }
+        float move = baseSpeed * dt;
+
+        auto& cam = activeScene->GetCamera();
+        glm::vec3 forward = glm::normalize(cam.target - cam.position);
+        glm::vec3 right   = glm::normalize(glm::cross(forward, cam.up));
+
+        auto applyDelta = [&](const glm::vec3& d) {
+            cam.position += d;
+            cam.target   += d;
+        };
+
+        switch (key) {
+        case GLFW_KEY_W: applyDelta(forward * move); break;
+        case GLFW_KEY_S: applyDelta(-forward * move); break;
+        case GLFW_KEY_A: applyDelta(-right * move); break;
+        case GLFW_KEY_D: applyDelta(right * move); break;
+        default: break;
         }
         });
 

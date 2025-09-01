@@ -24,6 +24,8 @@ struct Material
 	vec4 diffuse;
 	vec4 specular;
 	float shininess;
+	float useProceduralBump;
+
 };
 
 uniform mat4 mv_matrix; 
@@ -79,6 +81,7 @@ struct Material
 	vec4 diffuse;
 	vec4 specular;
 	float shininess;
+	float useProceduralBump;
 };
 
 uniform vec4 globalAmbient;
@@ -194,16 +197,36 @@ float ShadowCalculation(vec4 fragPosLightSpace)
 
 }
 
+void processBumpMapping(inout vec3 N)
+{
+	float a = 0.25; // a用于控制凸起的高度
+	float b = 100.0; // b用于控制凸起的频率
+	float x = N.x;
+	float y = N.y;
+	float z = N.z;
+	N.x = x + a * sin(b * x);
+	N.y = y + a * sin(b * y);
+	N.z = z + a * sin(b * z);
+
+}
+
 void main(void)
 {
 	if (isLightSource) {
         fragColor = material.diffuse;  // 直接使用材质颜色
         return;
     }
+	vec3 N = varyingNormal;
+	if(material.useProceduralBump > 0.5)
+	{
+		processBumpMapping(N);
+	}
 
-    vec3 N = normalize(varyingNormal);
+    N = normalize(N);
     vec3 L = normalize(varyingLightDir);
     vec3 H = normalize(varyingHalfVec);
+
+
 
 	// 计算阴影
 	float shadow = ShadowCalculation(shadow_coord);

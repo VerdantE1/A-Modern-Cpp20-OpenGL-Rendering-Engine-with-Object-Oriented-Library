@@ -18,6 +18,7 @@ public:
     int GetWindowHeight() const { return m_windowHeight; }
 
     static Engine* GetInstance() { return s_instance; }
+	float GetDeltaTime() const { return deltaTime; }
 
     void Run(GLFWwindow* window) {
 
@@ -112,52 +113,40 @@ protected:
             glfwSetWindowShouldClose(window, true);
         }
         if (!globalInputHandler) return;
-        
-        // 简单的键盘处理
+
+        // 1) 连续派发：WSAD 相机移动（每帧触发，使用 REPEAT）
+        auto dispatchRepeat = [&](int key) {
+            if (glfwGetKey(window, key) == GLFW_PRESS) {
+                globalInputHandler(key, GLFW_REPEAT);
+            }
+        };
+        dispatchRepeat(GLFW_KEY_W);
+        dispatchRepeat(GLFW_KEY_A);
+        dispatchRepeat(GLFW_KEY_S);
+        dispatchRepeat(GLFW_KEY_D);
+
+        // 2) 防抖派发：一次性按键（模式切换/功能键）
         static double lastKeyTime = 0.0;
-        if (currentTime - lastKeyTime > 0.3) { // 防抖
-            if (glfwGetKey(window, GLFW_KEY_G) == GLFW_PRESS) {
-                globalInputHandler(GLFW_KEY_G, GLFW_PRESS);
-                lastKeyTime = currentTime;
-            }
-            else if (glfwGetKey(window, GLFW_KEY_P) == GLFW_PRESS) {
-                globalInputHandler(GLFW_KEY_P, GLFW_PRESS);
-                lastKeyTime = currentTime;
-            }
-            else if (glfwGetKey(window, GLFW_KEY_C) == GLFW_PRESS) {
-                globalInputHandler(GLFW_KEY_C, GLFW_PRESS);
-                lastKeyTime = currentTime;
-            }
-            // 🆕 添加L和R键处理
-            else if (glfwGetKey(window, GLFW_KEY_L) == GLFW_PRESS) {
-                globalInputHandler(GLFW_KEY_L, GLFW_PRESS);
-                lastKeyTime = currentTime;
-            }
-            else if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS) {
-                globalInputHandler(GLFW_KEY_R, GLFW_PRESS);
-                lastKeyTime = currentTime;
-            }
-            // 数字键处理
-            else if (glfwGetKey(window, GLFW_KEY_1) == GLFW_PRESS) {
-                globalInputHandler(GLFW_KEY_1, GLFW_PRESS);
-                lastKeyTime = currentTime;
-            }
-            else if (glfwGetKey(window, GLFW_KEY_2) == GLFW_PRESS) {
-                globalInputHandler(GLFW_KEY_2, GLFW_PRESS);
-                lastKeyTime = currentTime;
-            }
-            else if (glfwGetKey(window, GLFW_KEY_3) == GLFW_PRESS) {
-                globalInputHandler(GLFW_KEY_3, GLFW_PRESS);
-                lastKeyTime = currentTime;
-            }
-            else if (glfwGetKey(window, GLFW_KEY_4) == GLFW_PRESS) {
-                globalInputHandler(GLFW_KEY_4, GLFW_PRESS);
-                lastKeyTime = currentTime;
-            }
-            else if (glfwGetKey(window, GLFW_KEY_5) == GLFW_PRESS) {
-                globalInputHandler(GLFW_KEY_5, GLFW_PRESS);
-                lastKeyTime = currentTime;
-            }
+        if (currentTime - lastKeyTime > 0.3) {
+            auto dispatchPress = [&](int key) -> bool {
+                if (glfwGetKey(window, key) == GLFW_PRESS) {
+                    globalInputHandler(key, GLFW_PRESS);
+                    lastKeyTime = currentTime;
+                    return true;
+                }
+                return false;
+            };
+
+            if (dispatchPress(GLFW_KEY_G)) return;
+            if (dispatchPress(GLFW_KEY_P)) return;
+            if (dispatchPress(GLFW_KEY_C)) return;
+            if (dispatchPress(GLFW_KEY_L)) return;
+            if (dispatchPress(GLFW_KEY_R)) return;
+            if (dispatchPress(GLFW_KEY_1)) return;
+            if (dispatchPress(GLFW_KEY_2)) return;
+            if (dispatchPress(GLFW_KEY_3)) return;
+            if (dispatchPress(GLFW_KEY_4)) return;
+            if (dispatchPress(GLFW_KEY_5)) return;
         }
     }
 private:
