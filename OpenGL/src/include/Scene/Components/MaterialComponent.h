@@ -1,6 +1,7 @@
 #pragma once
 #include "Component.h"
 #include <glm/glm.hpp>
+#include "Logger.h"
 
 class MaterialComponent : public Component {
 public:

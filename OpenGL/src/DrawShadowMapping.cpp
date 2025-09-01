@@ -16,6 +16,7 @@
 #include "BaseScene.h"
 #include "SceneManager.h"
 #include "Engine.h"
+#include "TextureComponent.h"
 
 void enityInitializer_func(Scene* scene) {
     // 创建Torus实体
@@ -86,14 +87,10 @@ void enityInitializer_func(Scene* scene) {
             LOG_ERROR("Failed to load environment cube map texture for envTorus.");
 		}
 
+        // 使用 TextureComponent 管理环境贴图
+        auto texComp = E_envTorus->AddComponent<TextureComponent>();
         if (s_envCubeMap) {
-            // 显式绑定到固定槽位
-            s_envCubeMap->BindToUnit(static_cast<unsigned>(TextureSlots::EnvCube));
-
-            // 设置 samplerCube uniform -> 该固定槽位
-            shaderForEnv->Bind();
-            shaderForEnv->SetUniform1i("u_EnvCube", static_cast<int>(TextureSlots::EnvCube));
-
+            texComp->SetEnvCubeTexture(s_envCubeMap);
         }
 
         // 让它居中放置，便于对比
@@ -114,6 +111,63 @@ void enityInitializer_func(Scene* scene) {
         E_BumpToruhs->GetComponent<MaterialComponent>()->SetUseProceduralBump(true);
         E_BumpToruhs->GetTransform()->SetPosition(3.0f, -3.0f, -5.0f);
         E_BumpToruhs->GetTransform()->SetScale(1.0f, 1.0f, 1.0f);
+    }
+
+    auto E_MoonSphere = scene->CreateEntity("MoonSphere");
+    {
+        auto spherePtr = std::make_shared<Sphere>(36, true); // 开启切线
+        auto shader = std::make_shared<Shader>("res/shaders/ShadowShader/RenderPass.shader");
+        auto renderComp = E_MoonSphere->AddComponent<RenderComponent>(
+            spherePtr,
+            shader
+        );
+        renderComp->SetNeedsNormalMatrix(true);
+
+        // 材质（基础高光等，漫反射会被贴图乘上）
+        E_MoonSphere->AddComponent<MaterialComponent>(MaterialComponent::MaterialType::CUSTOM);
+        auto mat = E_MoonSphere->GetComponent<MaterialComponent>();
+        mat->SetAmbient(glm::vec4(0.05f, 0.05f, 0.05f, 1.0f));
+        mat->SetDiffuse(glm::vec4(1.0f));   // 作为乘子，保持1
+        mat->SetSpecular(glm::vec4(0.1f));  // 月球基本无高光，可很低
+        mat->SetShininess(8.0f);
+
+        // 贴图只加载一次并固定到槽位
+        static std::shared_ptr<Texture> s_moonAlbedo = nullptr;
+        static std::shared_ptr<Texture> s_moonNormal = nullptr;
+        if (!s_moonAlbedo) {
+            s_moonAlbedo = std::make_shared<Texture>(
+                "res/textures/2k_mercury.jpg",
+                TextureFilterMode::LINEAR,
+                TextureFilterMode::LINEAR_MIPMAP_LINEAR,
+                TextureWrapMode::REPEAT,
+                TextureWrapMode::REPEAT,
+                true,   // mipmap
+                true    // flip Y
+            );
+        }
+        if (!s_moonNormal) {
+            s_moonNormal = std::make_shared<Texture>(
+                "res/textures/normalmap/normal_moon.png",
+                TextureFilterMode::LINEAR,
+                TextureFilterMode::LINEAR_MIPMAP_LINEAR,
+                TextureWrapMode::REPEAT,
+                TextureWrapMode::REPEAT,
+                true,   // mipmap
+                true    // flip Y
+            );
+        }
+
+        // 使用 TextureComponent 统一应用
+        auto texComp = E_MoonSphere->AddComponent<TextureComponent>();
+        texComp->SetAlbedoTexture(s_moonAlbedo)
+            .SetNormalTexture(s_moonNormal)
+            .SetNormalScale(1.0f)
+            .EnableAlbedo(true)
+            .EnableNormal(true)
+            .SetHasTangents(spherePtr->HasTangents()); // 根据几何自动开关
+
+        E_MoonSphere->GetTransform()->SetPosition(-3.0f, -3.0f, -7.0f);
+        E_MoonSphere->GetTransform()->SetScale(2.0f, 2.0f, 2.0f);
     }
     // 🔧 简化地面设置
     //auto E_ground = scene->CreateEntity("ground");
@@ -163,6 +217,9 @@ void enityInitializer_func(Scene* scene) {
 
 
 void DrawShadowMappingWithECS(GLFWwindow* window) {
+
+    // 在 DrawShadowMappingWithECS 函数开头定义（lambda 外层）
+    static float s_normalScale = 1.0f;
 
     InitializeGlobalShaders();
     InitializeGlobalObjects();
@@ -299,6 +356,59 @@ void DrawShadowMappingWithECS(GLFWwindow* window) {
                 return;
             default: break;
             }
+
+            // 法线贴图调试热键（仅在按下时触发）
+            auto& entities = activeScene->GetAllEntities();
+            for (auto& entity : entities) {
+                if (entity->GetName() == "MoonSphere") {
+                    auto texComp = entity->GetComponent<TextureComponent>();
+                    auto renderComp = entity->GetComponent<RenderComponent>();
+                    auto shader = renderComp ? renderComp->GetShader() : nullptr;
+                    
+                    if (texComp && shader) {
+                        switch (key) {
+                        case GLFW_KEY_F1: // F1: 正常渲染
+                            shader->Bind();
+                            shader->SetUniform1i("u_DebugMode", 0);
+                            LOG_INFO("Debug: Normal rendering mode");
+                            break;
+                        case GLFW_KEY_F2: // F2: 显示几何法线
+                            shader->Bind();
+                            shader->SetUniform1i("u_DebugMode", 1);
+                            LOG_INFO("Debug: Showing geometric normals");
+                            break;
+                        case GLFW_KEY_F3: // F3: 显示法线贴图结果
+                            shader->Bind();
+                            shader->SetUniform1i("u_DebugMode", 2);
+                            LOG_INFO("Debug: Showing normal mapped normals");
+                            break;
+                        case GLFW_KEY_N: // N: 开关法线贴图
+                            {
+                                static bool enabled = true;
+                                enabled = !enabled;
+                                texComp->EnableNormal(enabled);
+                                LOG_INFO("Normal mapping: {}", enabled ? "ON" : "OFF");
+                            }
+                            break;
+                        case GLFW_KEY_MINUS: // -: 减少法线强度
+                            {
+                                s_normalScale = std::max(0.0f, s_normalScale - 0.2f);
+                                texComp->SetNormalScale(s_normalScale);
+                                LOG_INFO("Normal scale: {}", s_normalScale);
+                            }
+                            break;
+                        case GLFW_KEY_EQUAL: // =: 增加法线强度
+                            {
+                                s_normalScale += 0.2f;
+                                texComp->SetNormalScale(s_normalScale);
+                                LOG_INFO("Normal scale: {}", s_normalScale);
+                            }
+                            break;
+                        }
+                    }
+                    break; // 只处理 MoonSphere
+                }
+            }
         }
 
         if (currentMode != ControlMode::CAMERA_CONTROL) return;
@@ -332,7 +442,8 @@ void DrawShadowMappingWithECS(GLFWwindow* window) {
         });
 
     // 设置初始状态
-    glfwSetWindowTitle(window, "阴影映射演示 | L键控制光源 | C键控制相机 | 当前：光源控制模式");
+    // 修改最后的窗口标题：
+        glfwSetWindowTitle(window, "阴影映射演示 | L光源/C相机 | F1正常/F2几何法线/F3贴图法线 | N开关法线/-+调强度");
 
     engine.SetScene(std::move(scene));
     engine.Run(window);

@@ -212,9 +212,11 @@
     <ClInclude Include="src\include\Scene\Components\RotationAnimation.h" />
     <ClInclude Include="src\include\Scene\Components\ShaderDataComponent.h" />
     <ClInclude Include="src\include\Scene\Components\ShadowComponent.h" />
+    <ClInclude Include="src\include\Scene\Components\TextureComponent.h" />
     <ClInclude Include="src\include\Scene\Components\TransformComponent.h" />
     <ClInclude Include="src\include\Scene\Entity.h" />
     <ClInclude Include="src\include\Scene\Scene.h" />
+    <ClInclude Include="src\include\TangentUtils.h" />
     <ClInclude Include="src\include\ViewUtils\Camera.h" />
     <ClInclude Include="src\include\2D\IsoscelesTriangle.h" />
     <ClInclude Include="res\shaders\Utils\Transform.glsl" />

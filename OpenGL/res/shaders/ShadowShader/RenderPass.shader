@@ -3,12 +3,15 @@
 layout (location = 0) in vec3 vertPos;
 layout (location = 1) in vec2 tex;
 layout (location = 2) in vec3 normal;
+layout (location = 3) in vec3 tangent;
 
 out vec3 varyingNormal;
 out vec3 varyingLightDir;
 out vec3 varyingHalfVec;
 out vec3 varyingVertPos;
+out vec3 varyingTangent;
 out vec4 shadow_coord; // 阴影坐标/光源坐标
+out vec2 tc; 
 
 struct PositionalLight
 {
@@ -44,13 +47,14 @@ void main() {
     varyingVertPos = P.xyz;
     varyingNormal = (norm_matrix * vec4(normal, 0.0)).xyz;
     varyingLightDir = light.position - varyingVertPos;
+	varyingTangent =  (norm_matrix * vec4(tangent, 0.0)).xyz;
 
     vec3 viewDir = normalize(-varyingVertPos);
     vec3 lightDir = normalize(varyingLightDir);
     varyingHalfVec = normalize(lightDir + viewDir);
 
     shadow_coord = lightSpaceMatrix * model * vec4(vertPos, 1.0);
-
+	tc = tex;
     gl_Position = proj_matrix * P;
 }
 
@@ -63,8 +67,9 @@ in vec3 varyingNormal;
 in vec3 varyingLightDir;
 in vec3 varyingHalfVec;
 in vec3 varyingVertPos;
+in vec3 varyingTangent; 
 in vec4 shadow_coord;
-
+in vec2 tc; // 纹理坐标
 out vec4 fragColor;
 
 struct PositionalLight
@@ -89,11 +94,49 @@ uniform PositionalLight light;
 uniform Material material;
 
 uniform sampler2D shadowMap; // 阴影贴图
+layout(binding = 0) uniform sampler2D albedoMap;  // 漫反射贴图
+layout(binding = 2) uniform sampler2D normalMap;   // 法线贴图
+
 uniform float shadowBias; // 阴影偏移
-uniform bool enablePCF; // 是否启用PCF(true=软阴影,false=硬阴影)
+
 uniform int pcfSamples; // PCF采样数量
 uniform float pcfRadius; // PCF采样半径
+
 uniform bool isLightSource;
+uniform bool useNormalMap; // 是否使用法线贴图
+uniform bool useAlbedoMap; // 是否使用漫反射贴图
+uniform bool enablePCF; // 是否启用PCF(true=软阴影,false=硬阴影)
+
+// DEBUG
+uniform int u_DebugMode = 0;         // 0=正常, 1=显示几何法线, 2=显示法线贴图结果
+uniform float normalScale = 1.0f;   // 法线强度
+
+vec3 calcNewNormal()
+{
+	//normalVec从顶点着色器传下来的几何法线,tangent顶点传下来的切向量.
+	//但有时候和法线不完全垂直，所以要做一次 Gram-Schmidt 正交化，确保切向量与法线正交。
+	vec3 normalVec = normalize(varyingNormal);
+	vec3 tangent = normalize(varyingTangent);
+	tangent = normalize(tangent - dot(tangent, normalVec) * normalVec);
+	vec3 bitangent = cross(tangent, normalVec);
+	//此时normalVec,tangent,bitangent构成一个正交坐标系
+
+	//TBN矩阵
+	mat3 tbn = mat3(tangent,bitangent,normalVec);
+
+	//采样法线贴图
+	vec3 retrievedNormal = texture(normalMap, tc).xyz;
+	retrievedNormal = normalize(retrievedNormal * 2.0 - 1.0); // 将法线贴图的值从[0,1]范围转换到[-1,1]范围
+
+	if(normalScale != 1.0) {
+		retrievedNormal.xy *= normalScale;
+	}
+
+	vec3 newNormal = tbn * retrievedNormal;
+	newNormal = normalize(newNormal);
+	return newNormal;
+
+}
 
 float HardShadowCalculation(vec4 fragPosLightSpace)
 {
@@ -217,25 +260,50 @@ void main(void)
         return;
     }
 	vec3 N = varyingNormal;
+
+	// 凹凸贴图扰动法线
 	if(material.useProceduralBump > 0.5)
 	{
 		processBumpMapping(N);
 	}
 
+	// 法线贴图扰动
+	if (useNormalMap) {
+		N = calcNewNormal();
+	}
+
     N = normalize(N);
+
+	// 调试模式：可视化法线
+	if (u_DebugMode == 1) {
+		// 显示几何法线（应该平滑渐变）
+		fragColor = vec4(normalize(varyingNormal) * 0.5 + 0.5, 1.0);
+		return;
+	}
+	if (u_DebugMode == 2) {
+		// 显示最终法线（含法线贴图，应该有细节纹理）
+		fragColor = vec4(N * 0.5 + 0.5, 1.0);
+		return;
+	}
+
     vec3 L = normalize(varyingLightDir);
     vec3 H = normalize(varyingHalfVec);
-
-
 
 	// 计算阴影
 	float shadow = ShadowCalculation(shadow_coord);
 	float lightIntensity = 1.0 - shadow; // 光照强度：0.0=完全阴影, 1.0=完全光照
+
+	// 颜色计算
+	vec4 diffuseColor = material.diffuse;
+	if (useAlbedoMap) {
+		diffuseColor *= texture(albedoMap, tc);  
+	}
 	// 环境光
-	fragColor = globalAmbient * material.ambient + light.ambient * material.ambient;
+	fragColor = globalAmbient * material.ambient
+				+ light.ambient * material.ambient;
 
 	// 漫反射
-	fragColor += light.diffuse * material.diffuse * max(dot(N, L), 0.0) * lightIntensity;
+	fragColor += light.diffuse * diffuseColor * max(dot(N, L), 0.0) * lightIntensity;
 	
 	// 镜面反射
 	fragColor += light.specular * material.specular * 

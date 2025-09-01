@@ -1067,6 +1067,12 @@
     <ClInclude Include="src\include\3D\SkyBoxModel.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="src\include\Scene\Components\TextureComponent.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\include\TangentUtils.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="res\shaders\Basic.shader" />

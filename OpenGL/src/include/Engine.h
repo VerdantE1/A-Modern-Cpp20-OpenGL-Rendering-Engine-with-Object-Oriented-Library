@@ -114,7 +114,7 @@ protected:
         }
         if (!globalInputHandler) return;
 
-        // 1) 连续派发：WSAD 相机移动（每帧触发，使用 REPEAT）
+        // 1) WSAD 每帧派发（连续移动）
         auto dispatchRepeat = [&](int key) {
             if (glfwGetKey(window, key) == GLFW_PRESS) {
                 globalInputHandler(key, GLFW_REPEAT);
@@ -125,10 +125,10 @@ protected:
         dispatchRepeat(GLFW_KEY_S);
         dispatchRepeat(GLFW_KEY_D);
 
-        // 2) 防抖派发：一次性按键（模式切换/功能键）
+        // 2) 功能键防抖（一次性）
         static double lastKeyTime = 0.0;
         if (currentTime - lastKeyTime > 0.3) {
-            auto dispatchPress = [&](int key) -> bool {
+            auto press = [&](int key) -> bool {
                 if (glfwGetKey(window, key) == GLFW_PRESS) {
                     globalInputHandler(key, GLFW_PRESS);
                     lastKeyTime = currentTime;
@@ -136,17 +136,26 @@ protected:
                 }
                 return false;
             };
-
-            if (dispatchPress(GLFW_KEY_G)) return;
-            if (dispatchPress(GLFW_KEY_P)) return;
-            if (dispatchPress(GLFW_KEY_C)) return;
-            if (dispatchPress(GLFW_KEY_L)) return;
-            if (dispatchPress(GLFW_KEY_R)) return;
-            if (dispatchPress(GLFW_KEY_1)) return;
-            if (dispatchPress(GLFW_KEY_2)) return;
-            if (dispatchPress(GLFW_KEY_3)) return;
-            if (dispatchPress(GLFW_KEY_4)) return;
-            if (dispatchPress(GLFW_KEY_5)) return;
+            
+            // 原有功能键
+            if (press(GLFW_KEY_G)) return;
+            if (press(GLFW_KEY_P)) return;
+            if (press(GLFW_KEY_C)) return;
+            if (press(GLFW_KEY_L)) return;
+            if (press(GLFW_KEY_R)) return;
+            if (press(GLFW_KEY_1)) return;
+            if (press(GLFW_KEY_2)) return;
+            if (press(GLFW_KEY_3)) return;
+            if (press(GLFW_KEY_4)) return;
+            if (press(GLFW_KEY_5)) return;
+            
+            // 新增：法线贴图调试键
+            if (press(GLFW_KEY_F1)) return;
+            if (press(GLFW_KEY_F2)) return;
+            if (press(GLFW_KEY_F3)) return;
+            if (press(GLFW_KEY_N)) return;
+            if (press(GLFW_KEY_MINUS)) return;
+            if (press(GLFW_KEY_EQUAL)) return;
         }
     }
 private:
